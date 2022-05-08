@@ -181,7 +181,7 @@ client.on("guildMemberAdd", member => {
     let prefixes = JSON.parse(fs.readFileSync("./prefixes.json", "utf-8"));
     if(!prefixes[message.guild.id]) {
       prefixes[message.guild.id] = {
-        prefixes: process.env.PREFIX
+        prefixes: "t."
       }
     }
     let prefix = prefixes[message.guild.id].prefixes;
