@@ -1,0 +1,241 @@
+const discord = require("discord.js");
+const config = require("./config.json");
+const fs = require("fs");
+const bot = new discord.Client();
+
+bot.on("ready", async () => {
+
+    console.log(`${bot.user.username} is online!`);
+
+    bot.user.setActivity("Testing!", { type: "WATCHING" });
+
+});
+
+bot.on("error", (e) => console.error(e));
+
+bot.on("message", async message => {
+    if (message.author.bot) return
+    let settings = JSON.parse(fs.readFileSync("./galgje.json", "utf8"));
+    if (message.channel.id == settings.channel || (!settings.channel && message.channel.name.includes("galgje"))) {
+        if (!settings.word) return nieuwWoord()
+
+        let word = settings.word;
+        let vooruitgang = settings.vooruitgang;
+        let content = message.content.toLowerCase()
+        let active = settings.active
+        if(active == false) return message.channel.send("De woorden zijn op! Een galgje master zal deze zo snel mogelijk toevoegen!").then(m => m.delete({ timeout: 10000 }))
+        if (message.author.id === settings.lastUser) return message.delete();
+        settings.lastUser = message.author.id;
+        fs.writeFile("./galgje.json", JSON.stringify(settings), (err) => {
+            if (err) console.log(err);
+        });
+
+        if (message.content.length == 1) {
+
+            let juist = false;
+            for (let i = 0; i < word.length; i++) {
+                if (word.charAt(i) == content) {
+                    juist = true;
+                    settings.vooruitgang[i] = content
+                    fs.writeFile("./galgje.json", JSON.stringify(settings), (err) => {
+                        if (err) console.log(err);
+                    });
+                }
+            }
+
+            if (juist == true) { // juist
+                message.react("✅")
+                updateMessage()
+
+            } else { // fout
+                message.react("❌")
+                settings.guesses += 1
+                settings.levens -= 1
+
+                let fout = true;
+                for (let i = 0; i < settings.fouteLetters.length; i++) {
+                    if (settings.fouteLetters[i] == content) {
+                        fout = false
+                    }
+                }
+                if (fout == true) settings.fouteLetters.push(content)
+
+
+                fs.writeFile("./galgje.json", JSON.stringify(settings), (err) => {
+                    if (err) console.log(err);
+                });
+                updateMessage()
+
+
+            }
+        } else {
+
+            if (message.content.toLowerCase() == settings.word) { // woord geraden!
+                message.channel.messages.fetch(settings.msg).then(async msg => {
+                    msg.edit(new discord.MessageEmbed()
+                        .setTitle("Galgje")
+                        .setDescription(`Het woord is geraden door ${message.author}. Het was \`${message.content.toLowerCase()}\`!`)
+                        .setColor("2cfc03")
+                        .setTimestamp()
+                    );
+                    nieuwWoord();
+                });
+                message.react("✅")
+            } else { // fout
+                message.react("❌")
+                settings.fouteLetters.push(content)
+                fs.writeFile("./galgje.json", JSON.stringify(settings), (err) => {
+                    if (err) console.log(err);
+                });
+            }
+
+        }
+
+        fs.writeFile("./galgje.json", JSON.stringify(settings), (err) => {
+            if (err) console.log(err);
+        });
+
+
+        async function nieuwWoord() {
+
+
+            let words = JSON.parse(fs.readFileSync("./woorden.json", "utf8"));
+            if (words.length < 1) {
+                message.channel.send("De woorden zijn op! Een galgje master zal deze zo snel mogelijk toevoegen!").then(m => m.delete({ timeout: 10000 }))
+                let galgjeKanaal = message.guild.channels.cache.get(config.galgjeKanaal)
+                if (galgjeKanaal) galgjeKanaal.send("De galgje woorden zijn op! :(")
+                else console.log("Geen galgje kanaal gevonden!")
+                settings.active = false
+                fs.writeFile("./galgje.json", JSON.stringify(settings), (err) => {
+                    if (err)
+                        console.log(err);
+                });
+                return;
+            } else {
+
+                let msg = await message.channel.send(new discord.MessageEmbed()
+                .setTitle("Galgje")
+                .setDescription("Ik heb een nieuw woord gekozen, veel succes met raden!")
+                .setColor("#03bafc")
+                .setTimestamp()
+            );
+
+                let random = Math.floor(Math.random() * words.length)
+                let word = words[random]
+                words.splice(random, 1);
+                fs.writeFile("./woorden.json", JSON.stringify(words), (err) => {
+                    if (err)
+                        console.log(err);
+                });
+
+                let levens = word.length + 1
+
+                settings = {
+                    active: true,
+                    channel: message.channel.id,
+                    word: word,
+                    lastUser: "",
+                    guesses: 0,
+                    levens: levens,
+                    msg: msg.id,
+                    vooruitgang: [],
+                    fouteLetters: []
+                };
+
+                for (let x = 0; x < word.length; x++) {
+                    settings.vooruitgang.push("_")
+                }
+                fs.writeFile("./galgje.json", JSON.stringify(settings), (err) => {
+                    if (err)
+                        console.log(err);
+                });
+
+            }
+        }
+
+        async function updateMessage() {
+            message.channel.messages.fetch(settings.msg).then(async msg => {
+
+                let levens = settings.levens;
+                let juist = true
+                for (let i = 0; i < word.length; i++) {
+                    if (word.charAt(i) !== vooruitgang[i]) juist = false;
+                }
+                let geradenLetters = "`";
+                for (let i = 0; i < vooruitgang.length; i++) {
+                    geradenLetters += vooruitgang[i] + " ";
+                }
+                geradenLetters += "`"
+
+                let fouteLettersBericht = "`";
+                for (let i = 0; i < settings.fouteLetters.length; i++) {
+                    fouteLettersBericht += settings.fouteLetters[i] + ", ";
+                }
+                fouteLettersBericht += " `"
+
+                if (levens < 1) {
+                    msg.edit(new discord.MessageEmbed()
+                        .setTitle("Galgje - Jullie hebben het woord niet geraden, ik win!")
+                        .setColor("#ff0000")
+                        .setDescription(`**Vooruitgang:** ${geradenLetters}\n**Foute letters:** ${fouteLettersBericht}\n**Levens over:** ${levens}`)
+                        .setFooter("©OreMC Galgje")
+                        .setTimestamp()
+
+                    );
+                    nieuwWoord();
+                } else if (juist == true) {
+                    await msg.edit(new discord.MessageEmbed()
+                        .setTitle("Galgje - Jullie hebben het woord geraden, jullie winnen!")
+                        .setColor("#2cfc03")
+                        .setDescription(`**Vooruitgang:** ${geradenLetters}\n**Foute letters:** ${fouteLettersBericht}\n**Levens over:** ${levens}\n**Het woord is geraden door ${message.author}!**`)
+                        .setTimestamp()
+
+                    );
+                    nieuwWoord();
+                } else {
+                    msg.edit(new discord.MessageEmbed()
+                        .setTitle("Galgje")
+                        .setDescription(`**Vooruitgang:** ${geradenLetters}\n**Foute letters:** ${fouteLettersBericht}\n**Levens over:** ${levens}`)
+                        .setColor("#03bafc")
+                        .setTimestamp()
+                    );
+                }
+            });
+        }
+
+    } else if (message.channel.id == config.galgjeKanaal) {
+        if (message.content.startsWith("!addwoord")) {
+
+            if (!message.member.roles.cache.has(config.galgjeRole)) return message.channel.send("Jij kan dit niet doen!");
+            let words = JSON.parse(fs.readFileSync("./woorden.json", "utf8"));
+            let args = message.content.split(" ").slice(1)
+            if (!args[0]) return message.channel.send("Geef een woord mee!")
+            words.push(args[0])
+            fs.writeFile("./woorden.json", JSON.stringify(words), (err) => {
+                if (err) console.log(err), message.channel.send("Er ging iets fout!")
+                else message.channel.send(`Het woord \`${args[0]}\` is succesvol toegevoegd aan de woordenlijst!`)
+            });
+            let settings = JSON.parse(fs.readFileSync("./galgje.json", "utf8"));
+            if(settings.active == false) {
+                
+            settings.active = true
+            await fs.writeFile("./galgje.json", JSON.stringify(settings), (err) => {
+                if (err)
+                    console.log(err);
+            });
+        }
+
+        } else if (message.content.startsWith("!woordenlijst")) {
+            let words = JSON.parse(fs.readFileSync("./woorden.json", "utf8"));
+            let tekst = "Huidige galgje woordenlijst: ";
+            words.forEach(e => {
+                tekst += `\`${e}\` `
+            });
+            message.channel.send(new discord.MessageEmbed().setTitle("Galgje woordenlijst!").setDescription(tekst).setColor("#03bafc"))
+        }
+
+    }
+
+
+});
+bot.login(config.token)
